@@ -7,15 +7,8 @@ import {
   QueryClient,
   QueryClientProvider,
   dehydrate,
-  setLogger,
   useQueryClient,
 } from 'react-query';
-
-setLogger({
-  log() {},
-  warn() {},
-  error() {},
-});
 
 let factory: ReturnType<typeof createLegacyAppRouter>;
 beforeEach(() => {

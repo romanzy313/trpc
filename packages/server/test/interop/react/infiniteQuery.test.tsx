@@ -5,14 +5,8 @@ import { render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expectTypeOf } from 'expect-type';
 import React, { Fragment, useState } from 'react';
-import { QueryClient, QueryClientProvider, setLogger } from 'react-query';
+import { QueryClient, QueryClientProvider } from 'react-query';
 import { createSSGHelpers } from '../../../../react/src/ssg';
-
-setLogger({
-  log() {},
-  warn() {},
-  error() {},
-});
 
 let factory: ReturnType<typeof createLegacyAppRouter>;
 beforeEach(() => {

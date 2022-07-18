@@ -3,13 +3,7 @@ import { Post, createLegacyAppRouter } from './__testHelpers';
 import '@testing-library/jest-dom';
 import { render, waitFor } from '@testing-library/react';
 import React, { useEffect, useState } from 'react';
-import { QueryClient, QueryClientProvider, setLogger } from 'react-query';
-
-setLogger({
-  log() {},
-  warn() {},
-  error() {},
-});
+import { QueryClient, QueryClientProvider } from 'react-query';
 
 let factory: ReturnType<typeof createLegacyAppRouter>;
 beforeEach(() => {
