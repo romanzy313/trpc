@@ -7,7 +7,7 @@ import {
   type WsClient,
   type WSHandlerOptions,
 } from '../unstable-core-do-not-import/ws/ws';
-import { incomingMessageToRequestNoBody } from './node-http';
+import { incomingMessageToRequestWithoutBody } from './node-http';
 
 export type WSSHandlerOptions<TRouter extends AnyRouter> =
   WSHandlerOptions<TRouter> & {
@@ -24,7 +24,7 @@ export function applyWSSHandler<TRouter extends AnyRouter>(
       return;
     }
 
-    const fetchReq = incomingMessageToRequestNoBody(req);
+    const fetchReq = incomingMessageToRequestWithoutBody(req);
     const wsClient = client as WsClient;
 
     const connection = handler.newConnection(fetchReq, wsClient);

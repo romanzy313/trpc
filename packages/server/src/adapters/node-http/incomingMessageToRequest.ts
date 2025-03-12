@@ -161,8 +161,12 @@ export function incomingMessageToRequest(
 
   return request;
 }
-
-export function incomingMessageToRequestNoBody(req: IncomingMessage): Request {
+/**
+ * Convert an [`IncomingMessage`](https://nodejs.org/api/http.html#class-httpincomingmessage) to a [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request)
+ */
+export function incomingMessageToRequestWithoutBody(
+  req: IncomingMessage,
+): Request {
   const ac = new AbortController();
 
   // Get host from either regular header or HTTP/2 pseudo-header
@@ -173,17 +177,6 @@ export function incomingMessageToRequestNoBody(req: IncomingMessage): Request {
     method: req.method,
     signal: ac.signal,
   };
-
-  // if (req.method !== 'GET' && req.method !== 'HEAD') {
-  //   init.body = createBody(req, opts);
-
-  //   // init.duplex = 'half' must be set when body is a ReadableStream, and Node follows the spec.
-  //   // However, this property is not defined in the TypeScript types for RequestInit, so we have
-  //   // to cast it here in order to set it without a type error.
-  //   // See https://fetch.spec.whatwg.org/#dom-requestinit-duplex
-  //   // @ts-expect-error this is fine
-  //   init.duplex = 'half';
-  // }
 
   const request = new Request(url, init);
 
