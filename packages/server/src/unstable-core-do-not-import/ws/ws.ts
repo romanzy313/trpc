@@ -137,11 +137,12 @@ export function newWsHandler<TRouter extends AnyRouter>(
       const clientSubscriptions = new Map<number | string, AbortController>();
       const abortController = new AbortController();
 
-      // TODO
-      // if (opts.keepAlive?.enabled) {
-      //   const { pingMs, pongWaitMs } = opts.keepAlive;
-      //   handleKeepAlive(client, pingMs, pongWaitMs);
-      // }
+      let keepAlive: KeepAliver | null = null;
+
+      if (opts.keepAlive?.enabled) {
+        const { pingMs, pongWaitMs } = opts.keepAlive;
+        keepAlive = makeKeepAlive(client, pingMs, pongWaitMs);
+      }
 
       function respond(untransformedJSON: TRPCResponseMessage) {
         client.send(
@@ -454,6 +455,9 @@ export function newWsHandler<TRouter extends AnyRouter>(
 
       return {
         async onMessage(msgStr) {
+          if (keepAlive) {
+            keepAlive.onMessage();
+          }
           if (msgStr === 'PONG') {
             return;
           }
@@ -509,6 +513,9 @@ export function newWsHandler<TRouter extends AnyRouter>(
           }
         },
         onClose(code) {
+          if (keepAlive) {
+            keepAlive.onClose();
+          }
           // TODO: interpret the code. maybe define some concrete values here
           // in accordance with https://datatracker.ietf.org/doc/html/rfc6455#section-7.4
           // or atleast interpret 1000 and reserved values as normal, and treat other codes as abnormal
@@ -541,5 +548,53 @@ export function newWsHandler<TRouter extends AnyRouter>(
         client.send(data);
       }
     },
+  };
+}
+
+interface KeepAliver {
+  onMessage(): void;
+  onClose(): void;
+}
+
+/**
+ * Handle WebSocket keep-alive messages
+ */
+export function makeKeepAlive(
+  client: WsClient,
+  pingMs = 30_000,
+  pongWaitMs = 5_000,
+): KeepAliver {
+  let timeout: NodeJS.Timeout | undefined = undefined;
+  let ping: NodeJS.Timeout | undefined = undefined;
+
+  const schedulePing = () => {
+    const scheduleTimeout = () => {
+      timeout = setTimeout(() => {
+        client.terminate();
+      }, pongWaitMs);
+    };
+    ping = setTimeout(() => {
+      client.send('PING');
+
+      scheduleTimeout();
+    }, pingMs);
+  };
+
+  function onMessage() {
+    clearTimeout(ping);
+    clearTimeout(timeout);
+
+    schedulePing();
+  }
+  function onClose() {
+    clearTimeout(ping);
+    clearTimeout(timeout);
+  }
+
+  schedulePing();
+
+  return {
+    onMessage,
+    onClose,
   };
 }
