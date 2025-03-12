@@ -47,7 +47,7 @@ import { isAsyncIterable, isObject, run } from '../utils';
  */
 export type CreateWSSContextFnOptions = NodeHTTPCreateContextFnOptions<
   Request,
-  Client
+  WsClient
 >;
 
 /**
@@ -67,7 +67,7 @@ export type WSConnectionHandlerOptions<TRouter extends AnyRouter> =
 /**
  * Web socket server handler
  */
-export type WSSHandlerOptions<TRouter extends AnyRouter> =
+export type WSHandlerOptions<TRouter extends AnyRouter> =
   WSConnectionHandlerOptions<TRouter> & {
     // server does not leak its implementation here
     // this domain only handles tRPC websocket protocol
@@ -100,7 +100,7 @@ export type WSSHandlerOptions<TRouter extends AnyRouter> =
 
 // this conforms to `ws.WebSocket`
 // but doesnt involve any listeners
-interface Client {
+export interface WsClient {
   // instead can use BufferLike from "@types/ws"
   send(message: string): void;
   close(code?: number, data?: string | Buffer): void;
@@ -127,7 +127,7 @@ interface WsConnection {
 }
 
 interface WsHandler {
-  newConnection(req: Request, wsClient: Client): WsConnection;
+  newConnection(req: Request, wsClient: WsClient): WsConnection;
   broadcastReconnectNotification(): void;
 }
 
@@ -136,12 +136,12 @@ const CONTEXT_STATE_RESOLVING = 1;
 const CONTEXT_STATE_RESOLVED = 2;
 
 export function newWsHandler<TRouter extends AnyRouter>(
-  opts: WSSHandlerOptions<TRouter>,
+  opts: WSHandlerOptions<TRouter>,
 ): WsHandler {
   const { createContext, router } = opts;
   const { transformer } = router._def._config;
 
-  const clients = new Set<Client>();
+  const clients = new Set<WsClient>();
 
   return {
     newConnection(req, client): WsConnection {

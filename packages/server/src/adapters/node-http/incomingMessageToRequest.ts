@@ -1,4 +1,5 @@
 import type * as http from 'http';
+import type { IncomingMessage } from 'http';
 import { TRPCError } from '../../@trpc/server';
 import type { NodeHTTPRequest, NodeHTTPResponse } from './types';
 
@@ -155,6 +156,34 @@ export function incomingMessageToRequest(
     // @ts-expect-error this is fine
     init.duplex = 'half';
   }
+
+  const request = new Request(url, init);
+
+  return request;
+}
+
+export function incomingMessageToRequestNoBody(req: IncomingMessage): Request {
+  const ac = new AbortController();
+
+  // Get host from either regular header or HTTP/2 pseudo-header
+  const url = createURL(req);
+
+  const init: RequestInit = {
+    headers: createHeaders(req.headers),
+    method: req.method,
+    signal: ac.signal,
+  };
+
+  // if (req.method !== 'GET' && req.method !== 'HEAD') {
+  //   init.body = createBody(req, opts);
+
+  //   // init.duplex = 'half' must be set when body is a ReadableStream, and Node follows the spec.
+  //   // However, this property is not defined in the TypeScript types for RequestInit, so we have
+  //   // to cast it here in order to set it without a type error.
+  //   // See https://fetch.spec.whatwg.org/#dom-requestinit-duplex
+  //   // @ts-expect-error this is fine
+  //   init.duplex = 'half';
+  // }
 
   const request = new Request(url, init);
 
