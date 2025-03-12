@@ -109,13 +109,13 @@ export interface WsClient {
 
 // used when context resolution is handled during upgrade phase
 // probably not a good idea
-interface _UpgradeResult {
-  clientId: number;
+// interface _UpgradeResult {
+//   clientId: number;
 
-  secWebSocketKey: string;
-  secWebSocketProtocol: string;
-  secWebSocketExtensions: string;
-}
+//   secWebSocketKey: string;
+//   secWebSocketProtocol: string;
+//   secWebSocketExtensions: string;
+// }
 
 // this is what is returned from the handler
 interface WsConnection {
@@ -469,9 +469,7 @@ export function newWsHandler<TRouter extends AnyRouter>(
       }
 
       return {
-        async onMessage(rawData) {
-          // eslint-disable-next-line @typescript-eslint/no-base-to-string
-          const msgStr = rawData.toString();
+        async onMessage(msgStr) {
           if (msgStr === 'PONG') {
             return;
           }
@@ -489,7 +487,7 @@ export function newWsHandler<TRouter extends AnyRouter>(
           // the ack that context is resolved is the
           // normal message handling
           if (contextResolved === CONTEXT_STATE_NOT_RESOLVED) {
-            await resolveContext(rawData);
+            await resolveContext(msgStr);
           } else if (contextResolved === CONTEXT_STATE_RESOLVING) {
             // protocol violation, terminate the connection
             client.terminate();

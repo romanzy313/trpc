@@ -1,6 +1,5 @@
 /* eslint-disable no-restricted-imports */
 
-import type { IncomingMessage } from 'http';
 import type ws from 'ws';
 import type { AnyRouter } from '../unstable-core-do-not-import';
 import {
