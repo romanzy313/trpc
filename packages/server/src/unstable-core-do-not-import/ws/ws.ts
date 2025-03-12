@@ -2,7 +2,6 @@
 
 /**
  * TODO List:
- * - [ ] Implement ws adapter
  * - [ ] Implement keep-alive functionality
  * - [ ] Add timeout for initial context resolution to prevent DOS
  * - [ ] Add client state checking capability on WsConnection (readyState equivalent)
@@ -27,7 +26,7 @@ import {
 import { getErrorShape } from '../error/getErrorShape';
 import { getTRPCErrorFromUnknown, TRPCError } from '../error/TRPCError';
 import { parseConnectionParamsFromUnknown } from '../http/parseConnectionParams';
-import type { BaseHandlerOptions } from '../http/types';
+import type { BaseHandlerOptions, TRPCRequestInfo } from '../http/types';
 import type { CreateContextCallback } from '../rootConfig';
 import type { AnyRouter, inferRouterContext } from '../router';
 import type {
@@ -164,27 +163,6 @@ export function newWsHandler<TRouter extends AnyRouter>(
         );
       }
 
-      function getConnectionParams(msgStr: string) {
-        let msg;
-        try {
-          msg = JSON.parse(msgStr) as TRPCConnectionParamsMessage;
-
-          if (!isObject(msg)) {
-            throw new Error('Message was not an object');
-          }
-        } catch (cause) {
-          throw new TRPCError({
-            code: 'PARSE_ERROR',
-            message: `Malformed TRPCConnectionParamsMessage`,
-            cause,
-          });
-        }
-
-        const connectionParams = parseConnectionParamsFromUnknown(msg.data);
-
-        return connectionParams;
-      }
-
       // this an enum. 0 - not resolved, 1 - resolving, 2 - resolved
       // if client misbehaves we terminate it
       // a timemout to the first message must be set to prevent DDOS.
@@ -196,12 +174,32 @@ export function newWsHandler<TRouter extends AnyRouter>(
       async function resolveContext(rawData: string) {
         contextResolved = CONTEXT_STATE_RESOLVING;
 
+        let msg: TRPCConnectionParamsMessage;
+        let connectionParams: TRPCRequestInfo['connectionParams'];
+        try {
+          msg = JSON.parse(rawData) as TRPCConnectionParamsMessage;
+
+          if (!isObject(msg)) {
+            throw new Error('Message was not an object');
+          }
+          if (msg.method != 'connectionParams') {
+            throw new Error('Unexpected method');
+          }
+          connectionParams = parseConnectionParamsFromUnknown(msg.data);
+        } catch (cause) {
+          throw new TRPCError({
+            code: 'PARSE_ERROR',
+            message: `Malformed TRPCConnectionParamsMessage`,
+            cause,
+          });
+        }
+
         try {
           ctx = await createContext?.({
             req,
             res: client,
             info: {
-              connectionParams: getConnectionParams(rawData),
+              connectionParams,
               calls: [],
               isBatchCall: false,
               accept: null,
@@ -213,10 +211,10 @@ export function newWsHandler<TRouter extends AnyRouter>(
           contextResolved = CONTEXT_STATE_RESOLVED;
 
           respond({
-            id: -1,
-            jsonrpc: '2.0',
+            id: null,
+            jsonrpc: msg.jsonrpc,
             result: {
-              type: 'link_initialized' as any,
+              type: 'link_ready' as any, // TODO: protocol change
             },
           });
         } catch (cause) {
