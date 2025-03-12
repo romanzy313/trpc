@@ -1,7 +1,6 @@
-/* eslint-disable no-restricted-imports */
-
 import type ws from 'ws';
-import type { AnyRouter } from '../unstable-core-do-not-import';
+import type { AnyRouter } from '../@trpc/server';
+// eslint-disable-next-line no-restricted-imports
 import {
   newWsHandler,
   type WsClient,
