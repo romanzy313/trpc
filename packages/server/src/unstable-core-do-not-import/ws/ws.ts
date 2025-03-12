@@ -183,7 +183,9 @@ export function newWsHandler<TRouter extends AnyRouter>(
             throw new Error('Message was not an object');
           }
           if (msg.method != 'connectionParams') {
-            throw new Error('Unexpected method');
+            throw new Error(
+              'Unexpected method, client should send connectionParams first as per new protocol specification',
+            );
           }
           connectionParams = parseConnectionParamsFromUnknown(msg.data);
         } catch (cause) {
