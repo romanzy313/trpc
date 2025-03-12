@@ -8,17 +8,22 @@
  * ```
  */
 /// <reference types="@fastify/websocket" />
+import { type IncomingMessage } from 'http';
+// @trpc/server/ws
+// eslint-disable-next-line no-restricted-imports
+import {
+  newWsHandler,
+  type WsClient,
+  type WSHandlerOptions,
+} from '@trpc/server/unstable-core-do-not-import/ws/ws';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 // @trpc/server
 import type { AnyRouter } from '../../@trpc/server';
 // @trpc/server/http
-import type { NodeHTTPCreateContextFnOptions } from '../node-http';
-// @trpc/server/ws
 import {
-  getWSConnectionHandler,
-  handleKeepAlive,
-  type WSSHandlerOptions,
-} from '../ws';
+  incomingMessageToRequestWithoutBody,
+  type NodeHTTPCreateContextFnOptions,
+} from '../node-http';
 import type { FastifyHandlerOptions } from './fastifyRequestHandler';
 import { fastifyRequestHandler } from './fastifyRequestHandler';
 
@@ -62,18 +67,25 @@ export function fastifyTRPCPlugin<TRouter extends AnyRouter>(
 
   if (opts.useWSS) {
     const trpcOptions =
-      opts.trpcOptions as unknown as WSSHandlerOptions<TRouter>;
+      opts.trpcOptions as unknown as WSHandlerOptions<TRouter>;
 
-    const onConnection = getWSConnectionHandler<TRouter>({
+    const handler = newWsHandler({
       ...trpcOptions,
     });
 
     fastify.get(prefix ?? '/', { websocket: true }, async (socket, req) => {
-      await onConnection(socket, req.raw);
-      if (trpcOptions?.keepAlive?.enabled) {
-        const { pingMs, pongWaitMs } = trpcOptions.keepAlive;
-        handleKeepAlive(socket, pingMs, pongWaitMs);
-      }
+      const incomingMessage: IncomingMessage = req.raw;
+      const fetchReq = incomingMessageToRequestWithoutBody(incomingMessage);
+
+      const wsClient = socket satisfies WsClient;
+      const connection = handler.newConnection(fetchReq, wsClient);
+
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+      socket.on('message', (data) => connection.onMessage(data.toString()));
+      socket.on('error', (cause) => connection.onError(cause));
+      socket.on('close', (code) => connection.onClose(code));
+
+      // there is no broadcastReconnectNotification here?
     });
   }
 
