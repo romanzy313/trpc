@@ -1,16 +1,4 @@
-// "core" implementation here
-
-/**
- * TODO List:
- * - [ ] Implement keep-alive functionality
- * - [ ] Add timeout for initial context resolution to prevent DOS
- * - [ ] Add client state checking capability on WsConnection (readyState equivalent)
- * - [ ] Review and document protocol changes to account for context resolution acknowledgment behavior
- * - [ ] Discuss and implement WebSocket close codes interpretation according to RFC6455
- * - [ ] Add proper types for 'link_initialized' message to the protocol, implement in WsLink
- * - [ ] Fix import paths
- * - [ ] Add examples for different WebSocket server implementations
- */
+// This is the "core" implementation of websockets.
 
 import { callTRPCProcedure } from '@trpc/server/@trpc/server';
 import type { NodeHTTPCreateContextFnOptions } from '@trpc/server/adapters/node-http';
@@ -68,7 +56,7 @@ export type WSConnectionHandlerOptions<TRouter extends AnyRouter> =
  */
 export type WSHandlerOptions<TRouter extends AnyRouter> =
   WSConnectionHandlerOptions<TRouter> & {
-    // server does not leak its implementation here
+    // server should NOT leak its implementation here
     // this domain only handles tRPC websocket protocol
     // wss: ws.WebSocketServer;
     prefix?: string;
@@ -97,8 +85,8 @@ export type WSHandlerOptions<TRouter extends AnyRouter> =
     dangerouslyDisablePong?: boolean;
   };
 
-// this conforms to `ws.WebSocket`
-// but doesnt involve any listeners
+// this mostly conforms to `ws.WebSocket`
+// any other server implementation can mascarade as this interface
 export interface WsClient {
   // instead can use BufferLike from "@types/ws"
   send(message: string): void;
@@ -106,19 +94,19 @@ export interface WsClient {
   terminate(): void;
 }
 
-// used when context resolution is handled during upgrade phase
-// probably not a good idea
+// could be used when context resolution is handled during upgrade phase
+// probably not a good idea though
 // interface _UpgradeResult {
 //   clientId: number;
-
 //   secWebSocketKey: string;
 //   secWebSocketProtocol: string;
 //   secWebSocketExtensions: string;
 // }
 
-// this is what is returned from the handler
 interface WsConnection {
-  // use only when connection params are handled during upgrade
+  // could be implemented if connection params are passed in query string
+  // and are handled during upgrade
+  // this is misalligned with the ws spec, but everyone is going it, so tRPC can to do it too
   // onUpgrade(req: Request): Promise<_UpgradeResult>;
   onMessage(rawData: string): Promise<void>;
   onClose(code: number): void;
@@ -165,14 +153,12 @@ export function newWsHandler<TRouter extends AnyRouter>(
 
       // this an enum. 0 - not resolved, 1 - resolving, 2 - resolved
       // if client misbehaves we terminate it
-      // a timemout to the first message must be set to prevent DDOS.
-      // for more complexity, could be done during update.
-      // Not to ws standard, but everyone is going, so we are going to do it too
-      let contextResolved = CONTEXT_STATE_NOT_RESOLVED;
+      // a timemout to the first message could be set to prevent DDOS.
+      let contextState = CONTEXT_STATE_NOT_RESOLVED;
       let ctx: inferRouterContext<TRouter> | undefined = undefined;
 
       async function resolveContext(rawData: string) {
-        contextResolved = CONTEXT_STATE_RESOLVING;
+        contextState = CONTEXT_STATE_RESOLVING;
 
         let msg: TRPCConnectionParamsMessage;
         let connectionParams: TRPCRequestInfo['connectionParams'];
@@ -210,7 +196,7 @@ export function newWsHandler<TRouter extends AnyRouter>(
               url: null,
             },
           });
-          contextResolved = CONTEXT_STATE_RESOLVED;
+          contextState = CONTEXT_STATE_RESOLVED;
 
           respond({
             id: null,
@@ -241,12 +227,10 @@ export function newWsHandler<TRouter extends AnyRouter>(
             }),
           });
           // close in next tick
-          // this needs testing with various backends
+          // this needs testing with various backends (uWebSockets fails here)
           (globalThis.setImmediate ?? globalThis.setTimeout)(() => {
             client.close();
           });
-          // dont rethrow though?
-          // throw error;
         }
       }
 
@@ -475,7 +459,7 @@ export function newWsHandler<TRouter extends AnyRouter>(
           }
           if (msgStr === 'PING') {
             if (!opts.dangerouslyDisablePong) {
-              // TODO: also do all the timeouts in here
+              // TODO: also do all the timeouts in here if keepalive is enabled
               client.send('PONG');
             }
             return;
@@ -486,15 +470,16 @@ export function newWsHandler<TRouter extends AnyRouter>(
           // wsLink must not send ANY messages during this to prevent races.
           // the ack that context is resolved is the
           // normal message handling
-          if (contextResolved === CONTEXT_STATE_NOT_RESOLVED) {
+          if (contextState === CONTEXT_STATE_NOT_RESOLVED) {
             await resolveContext(msgStr);
-          } else if (contextResolved === CONTEXT_STATE_RESOLVING) {
+            return;
+          } else if (contextState === CONTEXT_STATE_RESOLVING) {
             // protocol violation, terminate the connection
             client.terminate();
             return;
           }
-          // otherwise just handle the message
 
+          // otherwise just handle the message
           try {
             const msgJSON: unknown = JSON.parse(msgStr);
             const msgs: unknown[] = Array.isArray(msgJSON)
@@ -524,9 +509,9 @@ export function newWsHandler<TRouter extends AnyRouter>(
           }
         },
         onClose(code) {
-          // TODO: interpret code. maybe define some concrete values here
+          // TODO: interpret the code. maybe define some concrete values here
           // in accordance with https://datatracker.ietf.org/doc/html/rfc6455#section-7.4
-          // or atleast interpret 1000 as normal, and other codes as abnormal
+          // or atleast interpret 1000 and reserved values as normal, and treat other codes as abnormal
           const _ = code;
           for (const sub of clientSubscriptions.values()) {
             sub.abort();
