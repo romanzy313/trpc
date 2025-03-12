@@ -1,7 +1,7 @@
 // This is the "core" implementation of websockets.
 
 import { callTRPCProcedure } from '@trpc/server/@trpc/server';
-import type { NodeHTTPCreateContextFnOptions } from '@trpc/server/adapters/node-http';
+import { type NodeHTTPCreateContextFnOptions } from '@trpc/server/adapters/node-http';
 import {
   isObservable,
   observableToAsyncIterable,
@@ -155,7 +155,67 @@ export function newWsHandler<TRouter extends AnyRouter>(
       // if client misbehaves we terminate it
       // a timemout to the first message could be set to prevent DDOS.
       let contextState = CONTEXT_STATE_NOT_RESOLVED;
+
+      const url = new URL(req.url);
+      const doConnectionParams =
+        url.searchParams.get('connectionParams') === '1';
+
       let ctx: inferRouterContext<TRouter> | undefined = undefined;
+
+      async function resolveContextWithoutConnectionParams() {
+        contextState = CONTEXT_STATE_RESOLVING;
+
+        try {
+          ctx = await createContext?.({
+            req,
+            res: client,
+            info: {
+              connectionParams: null,
+              calls: [],
+              isBatchCall: false,
+              accept: null,
+              type: 'unknown',
+              signal: abortController.signal,
+              url: null,
+            },
+          });
+          contextState = CONTEXT_STATE_RESOLVED;
+
+          // respond({
+          //   id: null,
+          //   jsonrpc: msg.jsonrpc,
+          //   result: {
+          //     type: 'link_ready' as any, // TODO: protocol change
+          //   },
+          // });
+        } catch (cause) {
+          const error = getTRPCErrorFromUnknown(cause);
+          opts.onError?.({
+            error,
+            path: undefined,
+            type: 'unknown',
+            ctx,
+            req,
+            input: undefined,
+          });
+          respond({
+            id: null,
+            error: getErrorShape({
+              config: router._def._config,
+              error,
+              type: 'unknown',
+              path: undefined,
+              input: undefined,
+              ctx,
+            }),
+          });
+          // close in next tick
+          // this needs testing with various backends (uWebSockets fails here)
+          (globalThis.setImmediate ?? globalThis.setTimeout)(() => {
+            client.close();
+          });
+        }
+      }
 
       async function resolveContext(rawData: string) {
         contextState = CONTEXT_STATE_RESOLVING;
@@ -198,13 +258,13 @@ export function newWsHandler<TRouter extends AnyRouter>(
           });
           contextState = CONTEXT_STATE_RESOLVED;
 
-          respond({
-            id: null,
-            jsonrpc: msg.jsonrpc,
-            result: {
-              type: 'link_ready' as any, // TODO: protocol change
-            },
-          });
+          // respond({
+          //   id: null,
+          //   jsonrpc: msg.jsonrpc,
+          //   result: {
+          //     type: 'link_ready' as any, // TODO: protocol change
+          //   },
+          // });
         } catch (cause) {
           const error = getTRPCErrorFromUnknown(cause);
           opts.onError?.({
@@ -452,62 +512,74 @@ export function newWsHandler<TRouter extends AnyRouter>(
         }
       }
 
-      return {
-        async onMessage(msgStr) {
-          if (msgStr === 'PONG') {
-            return;
+      async function onMessage(msgStr: string) {
+        if (msgStr === 'PONG') {
+          return;
+        }
+        if (msgStr === 'PING') {
+          if (!opts.dangerouslyDisablePong) {
+            // TODO: also do all the timeouts in here if keepalive is enabled
+            client.send('PONG');
           }
-          if (msgStr === 'PING') {
-            if (!opts.dangerouslyDisablePong) {
-              // TODO: also do all the timeouts in here if keepalive is enabled
-              client.send('PONG');
-            }
-            return;
-          }
+          return;
+        }
 
-          // first message MUST be TRPCRequestInfo['connectionParams'] for context resolution.
-          // empty message is sent if user doesn't use it.
-          // wsLink must not send ANY messages during this to prevent races.
-          // the ack that context is resolved is the
-          // normal message handling
-          if (contextState === CONTEXT_STATE_NOT_RESOLVED) {
+        // first message MUST be TRPCRequestInfo['connectionParams'] for context resolution.
+        // empty message is sent if user doesn't use it.
+        // wsLink must not send ANY messages during this to prevent races.
+        // the ack that context is resolved is the
+        // normal message handling
+        if (contextState === CONTEXT_STATE_NOT_RESOLVED) {
+          contextState = CONTEXT_STATE_RESOLVING;
+          if (doConnectionParams) {
             await resolveContext(msgStr);
-            return;
-          } else if (contextState === CONTEXT_STATE_RESOLVING) {
-            // protocol violation, terminate the connection
-            client.terminate();
-            return;
+          } else {
+            await resolveContextWithoutConnectionParams();
           }
+        } else if (contextState === CONTEXT_STATE_RESOLVING) {
+          // protocol violation, terminate the connection
+          // client.terminate();
+          // return;
+        }
 
-          // otherwise just handle the message
-          try {
-            const msgJSON: unknown = JSON.parse(msgStr);
-            const msgs: unknown[] = Array.isArray(msgJSON)
-              ? msgJSON
-              : [msgJSON];
-            const promises = msgs
-              .map((raw) => parseTRPCMessage(raw, transformer))
-              .map(handleRequest);
-            await Promise.all(promises);
-          } catch (cause) {
-            const error = new TRPCError({
-              code: 'PARSE_ERROR',
-              cause,
-            });
+        let iter = 0;
+        while (contextState != CONTEXT_STATE_RESOLVED && iter <= 1000) {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          iter++;
+        }
+        if (iter == 1000) {
+          throw Error('failed to resolve context');
+        }
+        // otherwise just handle the message
+        try {
+          const msgJSON: unknown = JSON.parse(msgStr);
+          const msgs: unknown[] = Array.isArray(msgJSON) ? msgJSON : [msgJSON];
+          const promises = msgs
+            .map((raw) => parseTRPCMessage(raw, transformer))
+            .map(handleRequest);
+          await Promise.all(promises);
+        } catch (cause) {
+          const error = new TRPCError({
+            code: 'PARSE_ERROR',
+            cause,
+          });
 
-            respond({
-              id: null,
-              error: getErrorShape({
-                config: router._def._config,
-                error,
-                type: 'unknown',
-                path: undefined,
-                input: undefined,
-                ctx: undefined,
-              }),
-            });
-          }
-        },
+          respond({
+            id: null,
+            error: getErrorShape({
+              config: router._def._config,
+              error,
+              type: 'unknown',
+              path: undefined,
+              input: undefined,
+              ctx: undefined,
+            }),
+          });
+        }
+      }
+
+      return {
+        onMessage,
         onClose(code) {
           // TODO: interpret the code. maybe define some concrete values here
           // in accordance with https://datatracker.ietf.org/doc/html/rfc6455#section-7.4
