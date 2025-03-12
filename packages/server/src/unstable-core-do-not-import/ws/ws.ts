@@ -1,5 +1,3 @@
-// This is the "core" implementation of websockets.
-
 import { callTRPCProcedure } from '@trpc/server/@trpc/server';
 import type { NodeHTTPCreateContextFnOptions } from '@trpc/server/adapters/node-http';
 import {
@@ -88,26 +86,12 @@ export type WSHandlerOptions<TRouter extends AnyRouter> =
 // this mostly conforms to `ws.WebSocket`
 // any other server implementation can mascarade as this interface
 export interface WsClient {
-  // instead can use BufferLike from "@types/ws"
   send(message: string): void;
-  close(code?: number, data?: string | Buffer): void;
+  close(code?: number): void;
   terminate(): void;
 }
 
-// could be used when context resolution is handled during upgrade phase
-// probably not a good idea though
-// interface _UpgradeResult {
-//   clientId: number;
-//   secWebSocketKey: string;
-//   secWebSocketProtocol: string;
-//   secWebSocketExtensions: string;
-// }
-
 interface WsConnection {
-  // could be implemented if connection params are passed in query string
-  // and are handled during upgrade
-  // this is misalligned with the ws spec, but everyone is going it, so tRPC can to do it too
-  // onUpgrade(req: Request): Promise<_UpgradeResult>;
   onMessage(rawData: string): Promise<void>;
   onClose(code: number): void;
   onError(cause: Error): void;
@@ -152,9 +136,7 @@ export function newWsHandler<TRouter extends AnyRouter>(
         );
       }
 
-      // this an enum. 0 - not resolved, 1 - resolving, 2 - resolved
-      // if client misbehaves we terminate it
-      // a timemout to the first message could be set to prevent DDOS.
+      // this is like an enum. 0 - not resolved, 1 - resolving, 2 - resolved
       let contextState = CONTEXT_STATE_NOT_RESOLVED;
       let ctx: inferRouterContext<TRouter> | undefined = undefined;
 
@@ -470,20 +452,19 @@ export function newWsHandler<TRouter extends AnyRouter>(
           }
 
           // first message MUST be TRPCRequestInfo['connectionParams'] for context resolution.
-          // empty message is sent if user doesn't use it.
-          // wsLink must not send ANY messages during this to prevent races.
-          // the ack that context is resolved is the
-          // normal message handling
+          // client MUST NOT send messages during context resolution.
+          // after context resolution is complete, server sends link_ready message
           if (contextState === CONTEXT_STATE_NOT_RESOLVED) {
             await resolveContext(msgStr);
             return;
           } else if (contextState === CONTEXT_STATE_RESOLVING) {
             // protocol violation, terminate the connection
+            // or could instead return a debuggable error
             client.terminate();
             return;
           }
 
-          // otherwise just handle the message
+          // otherwise its business as usual
           try {
             const msgJSON: unknown = JSON.parse(msgStr);
             const msgs: unknown[] = Array.isArray(msgJSON)
@@ -516,9 +497,9 @@ export function newWsHandler<TRouter extends AnyRouter>(
           if (keepAlive) {
             keepAlive.onClose();
           }
-          // TODO: interpret the code. maybe define some concrete values here
+          // TODO: interpret the close code. Decide on what means what
           // in accordance with https://datatracker.ietf.org/doc/html/rfc6455#section-7.4
-          // or atleast interpret 1000 and reserved values as normal, and treat other codes as abnormal
+          // or interpret 1000 as normal, and treat other codes as abnormal
           const _ = code;
           for (const sub of clientSubscriptions.values()) {
             sub.abort();
