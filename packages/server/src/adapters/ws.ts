@@ -25,7 +25,7 @@ export function applyWSSHandler<TRouter extends AnyRouter>(
     }
 
     const fetchReq = incomingMessageToRequestWithoutBody(req);
-    const wsClient = client as WsClient;
+    const wsClient = client satisfies WsClient;
 
     const connection = handler.newConnection(fetchReq, wsClient);
 
