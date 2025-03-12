@@ -156,12 +156,10 @@ export function newWsHandler<TRouter extends AnyRouter>(
       // if client misbehaves we terminate it
       // a timemout to the first message could be set to prevent DDOS.
       let contextState = CONTEXT_STATE_NOT_RESOLVED;
-
-      const url = new URL(req.url);
-      const doConnectionParams =
-        url.searchParams.get('connectionParams') === '1';
-
       let ctx: inferRouterContext<TRouter> | undefined = undefined;
+
+      const doConnectionParams =
+        new URL(req.url).searchParams.get('connectionParams') === '1';
 
       async function resolveContextWithoutConnectionParams() {
         contextState = CONTEXT_STATE_RESOLVING;
@@ -541,6 +539,7 @@ export function newWsHandler<TRouter extends AnyRouter>(
           } else {
             await resolveContextWithoutConnectionParams();
           }
+          // return;
         } else if (contextState === CONTEXT_STATE_RESOLVING) {
           // protocol violation, terminate the connection
           // client.terminate();
@@ -553,7 +552,7 @@ export function newWsHandler<TRouter extends AnyRouter>(
           iter++;
         }
         if (iter == 1000) {
-          throw Error('failed to resolve context');
+          throw Error('failed to resolve context in time');
         }
         // otherwise just handle the message
         try {
