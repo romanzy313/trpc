@@ -20,6 +20,7 @@ import type {
 } from '@trpc/server/unstable-core-do-not-import/procedure';
 import { run } from '@trpc/server/unstable-core-do-not-import/utils';
 import { konn } from 'konn';
+import { Response } from 'node-fetch';
 import WebSocket from 'ws';
 import { z } from 'zod';
 
@@ -942,6 +943,9 @@ describe('regression test - slow createContext', () => {
       expect(typeof res.error.data.stack).toBe('string');
       res.error.data.stack = '[redacted]';
     }
+    // this looks like a correct response
+    // console.log('createContext throws: responses', responses);
+    // console.log('createContext throws: error', responses[0].error);
     expect(responses).toHaveLength(2);
     const [first, second] = responses;
 

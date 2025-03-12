@@ -179,7 +179,6 @@ export function newWsHandler<TRouter extends AnyRouter>(
             },
           });
           contextState = CONTEXT_STATE_RESOLVED;
-
           // respond({
           //   id: null,
           //   jsonrpc: msg.jsonrpc,
@@ -256,7 +255,6 @@ export function newWsHandler<TRouter extends AnyRouter>(
             },
           });
           contextState = CONTEXT_STATE_RESOLVED;
-
           // respond({
           //   id: null,
           //   jsonrpc: msg.jsonrpc,
@@ -534,6 +532,7 @@ export function newWsHandler<TRouter extends AnyRouter>(
         // normal message handling
         if (contextState === CONTEXT_STATE_NOT_RESOLVED) {
           contextState = CONTEXT_STATE_RESOLVING;
+
           if (doConnectionParams) {
             await resolveContext(msgStr);
           } else {
