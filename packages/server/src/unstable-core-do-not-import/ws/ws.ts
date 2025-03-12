@@ -545,14 +545,16 @@ export function newWsHandler<TRouter extends AnyRouter>(
           // return;
         }
 
+        // compat: hacky way to await state resolution
         let iter = 0;
-        while (contextState != CONTEXT_STATE_RESOLVED && iter <= 1000) {
-          await new Promise((resolve) => setTimeout(resolve, 1));
+        while (contextState != CONTEXT_STATE_RESOLVED && iter < 100) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
           iter++;
         }
-        if (iter == 1000) {
+        if (iter == 100) {
           throw Error('failed to resolve context in time');
         }
+
         // otherwise just handle the message
         try {
           const msgJSON: unknown = JSON.parse(msgStr);
